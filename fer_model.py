@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 from torchvision import transforms
 from PIL import Image
+from datetime import datetime
+import torch.nn.functional as F
 
 # --- FER3ResNet 定義 ---
 class ResidualBlock(nn.Module):
@@ -70,11 +72,20 @@ preprocess = transforms.Compose([
 labels = ["positive", "negative", "neutral"]
 
 def classify_pil(face_pil):
-  """PIL Image -> ラベル (str)"""
+  """PIL Image -> ラベル (str). ターミナルに結果を print する。"""
   if fer_model is None:
     return None
-  x = preprocess(face_pil).unsqueeze(0).to(device)
-  with torch.no_grad():
-    out = fer_model(x)
-    pred = torch.argmax(out, dim=1).item()
-  return labels[pred]
+  try:
+    x = preprocess(face_pil).unsqueeze(0).to(device)
+    with torch.no_grad():
+      out = fer_model(x)
+      probs = F.softmax(out, dim=1).cpu().squeeze().numpy()
+      pred_idx = int(probs.argmax())
+      label = labels[pred_idx]
+      score = float(probs[pred_idx])
+    # ターミナル出力（タイムスタンプ付き）
+    print(f"[{datetime.now().isoformat(timespec='seconds')}] 表情: {label} (score={score:.3f})")
+    return label
+  except Exception as e:
+    print(f"classify_pil error: {e}")
+    return None

@@ -1,4 +1,3 @@
-# ...existing code...
 from ultralytics import YOLO
 
 try:
@@ -20,4 +19,3 @@ def detect_faces(img_rgb):
             x1, y1, x2, y2 = map(int, box.cpu().numpy())
             boxes.append((x1, y1, x2, y2))
     return boxes
-# ...existing code...

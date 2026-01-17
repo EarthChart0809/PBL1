@@ -11,8 +11,8 @@ import struct
 # from ultralytics import YOLO
 # from PIL import Image
 from PIL import Image
-from fer_model import fer_model, classify_pil  # 新ファイルから取得
-from detector import detect_faces, yolo_available  # 追加
+from fer_model import fer_model, classify_pil  
+from detector import detect_faces, yolo_available  
 
 # # YOLO モデル読み込み（存在しなければ None）
 # try:
