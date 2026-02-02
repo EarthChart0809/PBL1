@@ -3,6 +3,48 @@
 ## 概要
 Raspberry Pi で JPEG 圧縮して送信したカメラ映像を PC 側で受信・表示し、YOLOv8-face による顔検出と FER3ResNet による表情分類を行うサンプルプロジェクト。GUI は Tkinter、顔検出モデルは detector.py で一度だけロードして共有します。
 
+## カメラ映像取得機能概要
+Raspberry Pi から JPEG 圧縮したカメラ映像を TCP で送信し、PC 側で受信・デコードして Tkinter の Canvas に描画するサンプルプロジェクト。表情認識（FER）、YOLO 関連の機能はこの README から除外しています。
+
+## 仕組み（簡潔）
+- 送信（Raspberry Pi 側）
+  - カメラを OpenCV でキャプチャ。
+  - JPEG にエンコード（例: cv2.imencode('.jpg', frame, [IMWRITE_JPEG_QUALITY, 50])）。
+  - 送信前に先頭 4 バイトでデータ長を big-endian unsigned long（">L"）で付加。
+  - TCP ソケットでサーバ（PC）へ送信。
+  - スレッド／キュー構成：キャプチャスレッドはフレームをキューに入れ、別スレッドでエンコード＆送信して負荷を分離。
+
+- 受信（PC 側）
+  - TCP クライアントで接続後、受信ループで先頭 4 バイトを読みデータ長を取得。
+  - 指定バイト数を完全受信してからバッファを切り出し、cv2.imdecode でデコード。
+  - Tkinter メインスレッドで Canvas に描画（別スレッドで受信し、window.after(0, ...) でメインスレッドに描画委譲）。
+  - ローカルウェブカメラは別ラベル（右側）で同時表示可能。
+
+## 主要ファイル（表情認識除外）
+- new_sent_Raspi.py — ラズパイ側のキャプチャ／エンコード／送信サンプル（キューとスレッドで実装）
+- main.py — PC 側メイン（Tkinter GUI、受信ループ、ローカルウェブカメラ表示）
+- camera_manager.py — 受信データのデコードと Canvas 更新、受信ループ実装
+
+## 依存ライブラリ（最低限）
+python -m pip install opencv-python pillow numpy
+
+※ 上の他にネットワーク周りは標準ライブラリ（socket, struct, threading, concurrent.futures）を使用。
+
+## 実行手順（簡潔）
+1. Raspberry Pi 側で IP/PORT を設定して送信を開始:
+   python new_sent_Raspi.py
+2. PC 側で main.py の SERVER_IP / SERVER_PORT を送信側に合わせて実行:
+   python main.py
+
+## トラブルシューティング
+- 受信が途中で切れる・フレームが壊れる場合：受信ループで完全受信（先頭4バイト→サイズ→サイズ分のデータ）を確保しているか確認。
+- 接続エラー：SERVER_IP / SERVER_PORT を両側で一致させ、ファイアウォールを確認。
+- パフォーマンス改善：送信側の解像度（例 320x240）、FPS、JPEG 品質を下げる。送受信バッファサイズや TCP_NODELAY を調整。
+- キューが満杯なら最新フレーム優先の設計になっています（古いフレームを破棄）。
+
+## 注意
+本プロジェクトは学習・実験目的のサンプルです。公開・配布時は利用ライブラリのライセンスに注意してください。
+
 ## 必要ファイル（プロジェクト直下に配置）
 - yolov8n-face.pt
 - fer3class_resnet_ft_jaffe.pth

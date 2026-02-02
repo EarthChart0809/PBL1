@@ -6,13 +6,14 @@ import PIL.ImageTk
 import cv2
 import threading
 import struct
+import time
 
 # YOLO と 表情分類モジュールをインポート
 # from ultralytics import YOLO
 # from PIL import Image
 from PIL import Image
-from fer_model import fer_model, classify_pil  
-from detector import detect_faces, yolo_available  
+from fer_model import fer_model, classify_pil
+from detector import detect_faces, yolo_available
 
 # # YOLO モデル読み込み（存在しなければ None）
 # try:
@@ -31,6 +32,12 @@ class CameraManager:
     self.client = None
     self.last_draw_time = 0  # 描画のためのタイムスタンプ
 
+    # 検出/分類のスロットリング設定
+    self.last_detection_time = 0.0
+    self.detection_interval = 5  # 秒単位（必要に応じて変更）
+    self.cached_boxes = []
+    self.cached_labels = []
+
   # 各カメラのフレームを表示する関数
   def update_image(self, data, canvas, photo_var):
     if not canvas.winfo_ismapped():
@@ -42,26 +49,39 @@ class CameraManager:
       print("Failed to decode image data.")
       return
 
-    # 顔検出と表情分類を行う（モデルが利用可能な場合）
+    # 顔検出と表情分類を間引き実行（重い処理を dtection_interval 秒ごとに実行）
     try:
+      now = time.time()
       img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-      if yolo_available and fer_model is not None:
+      if (yolo_available and fer_model is not None and
+              (now - self.last_detection_time) >= self.detection_interval):
         boxes = detect_faces(img_rgb)
+        labels = []
         for (x1, y1, x2, y2) in boxes:
           x1 = max(0, x1); y1 = max(0, y1)
           x2 = min(img_rgb.shape[1], x2); y2 = min(img_rgb.shape[0], y2)
           face = img_rgb[y1:y2, x1:x2]
           if face.size == 0:
+            labels.append(None)
             continue
           face_pil = Image.fromarray(face)
           label = classify_pil(face_pil)
-          if label is None:
-            continue
+          labels.append(label)
+        # キャッシュ更新
+        self.cached_boxes = boxes
+        self.cached_labels = labels
+        self.last_detection_time = now
+      # 描画はキャッシュを使う（直近の検出結果をオーバーレイ）
+      if self.cached_boxes:
+        for idx, (x1, y1, x2, y2) in enumerate(self.cached_boxes):
+          lbl = self.cached_labels[idx] if idx < len(
+              self.cached_labels) else None
           cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
-          cv2.putText(img, label, (x1, max(0, y1 - 10)),
-                      cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-      else:
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+          if lbl:
+            cv2.putText(img, lbl, (x1, max(0, y1 - 10)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+      # 表示用にRGBへ変換（PhotoImageのため）
+      img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     except Exception as e:
       print(f"Error in detection/classify: {e}")
       img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
